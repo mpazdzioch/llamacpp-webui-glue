@@ -55,12 +55,19 @@ For example:
 ```
 
 ### 4. Run the project
-This step may take a while because docker images have to be built.
+This step may take a while because docker images have to be built. First launch of webui also does some init stuff. 
 ```bash
 docker compose up
 ```
+The webui interface will be available on [localhost:7777](http://localhost:7777). If the ui loads but there's no models to choose from the dropdown list, check the docker compose logs. Both webui and llama instances log everything to stdout of docker compose.
 
+## Common problems
 
+1. There are no models to choose from the dropdown list in webui:
+   - Check the logs from llamacpp container for details. For some reason llama-server failed to load the model(s)
+
+2. Not all of the models activated in set file are available in webui:
+   - When you try to load more models that your GPU/CPU memory can hold, some will fail to load
 
 ## Model configuration details
 
