@@ -18,6 +18,7 @@ It's developed and tested on linux. Not tested on other OSs
 ```bash
 git clone --recurse-submodules https://github.com/mpazdzioch/llamacpp-webui-glue.git
 cd llamacpp-webui-glue
+touch generated-config/env_webui generated-config/supervisord.conf
 ```
 
 ### 1. Set env vars in .env file
@@ -121,4 +122,3 @@ docker compose run scripts python scan_model_dirs.py
 ```
 This script will look for .gguf files in path set in `MODEL_DIRS` env var in docker-compose.yml
 It will generate .yml file for each .gguf file, `default-config.yml` and `default-set.yml`. All files are saved to `./model-config` folder.
-It also creates empty files in `./generated-config` that docker compose won't start without.

@@ -2,6 +2,7 @@ services:
 
   webui:
     image: ghcr.io/open-webui/open-webui:main
+    user: "${UID}:${GID}"
     volumes:
       - './webui-data:/app/backend/data'
     ports:
