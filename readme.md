@@ -18,7 +18,6 @@ It's developed and tested on linux. Not tested on other OSs
 ```bash
 git clone --recurse-submodules https://github.com/mpazdzioch/llamacpp-webui-glue.git
 cd llamacpp-webui-glue
-touch generated-config/env_webui generated-config/supervisord.conf
 ```
 
 ### 1. Set env vars in .env file
@@ -34,6 +33,7 @@ touch generated-config/env_webui generated-config/supervisord.conf
 
 ### 2. Run helper script to generate .yml for your model files
 ```bash
+touch generated-config/env_webui generated-config/supervisord.conf
 docker compose run scripts python scan_model_dirs.py
 ```
 
