@@ -1,0 +1,50 @@
+services:
+
+  webui:
+    image: ghcr.io/open-webui/open-webui:main
+    volumes:
+      - './webui-data:/app/backend/data'
+    ports:
+      - "7777:8080"
+    env_file:
+      - ./generated-config/env_webui
+    environment:
+      WEBUI_AUTH: 'False'
+      ENABLE_OLLAMA_API: 'False'
+    depends_on:
+      - scripts
+
+  scripts:
+    build: scripts
+    env_file:
+      .env
+    user: "${UID}:${GID}"
+    volumes:
+      - './scripts/app:/app'
+      - '${MODEL_DIR}:${MODEL_DIR}'
+      - './model-config:/model-config'
+      - './generated-config:/generated-config'
+    environment:
+      GENERATED_CONFIG_DIR: /generated-config
+      DEFAULT_MODEL_CONFIG: /model-config/default-config.yml #OPTIONAL
+      MODEL_DIRS: ${MODEL_DIR}
+    command: ["python","gen.py"]
+
+  llamacpp:
+    build:
+      context: llamacpp
+      args:
+        UBUNTU_VERSION: "${UBUNTU_VERSION}"
+        CUDA_VERSION: "${CUDA_VERSION}"
+        CUDA_DOCKER_ARCH: "${CUDA_DOCKER_ARCH}"
+    volumes:
+      - '${MODEL_DIR}:${MODEL_DIR}'
+      - './generated-config/supervisord.conf:/etc/supervisor/supervisord.conf'
+    command: ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf", "--nodaemon"]
+    deploy: #CONFIGURE YOUR GPU'S OR REMOVE WHOLE DEPLOY SECTION IF USING CPU ONLY
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0','1'] 
+              capabilities: [gpu]
