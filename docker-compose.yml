@@ -41,6 +41,8 @@ services:
       - '${MODEL_DIR}:${MODEL_DIR}'
       - './generated-config/supervisord.conf:/etc/supervisor/supervisord.conf'
     command: ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf", "--nodaemon"]
+    depends_on:
+      - scripts
     deploy: #CONFIGURE YOUR GPU'S OR REMOVE WHOLE DEPLOY SECTION IF USING CPU ONLY
       resources:
         reservations:
