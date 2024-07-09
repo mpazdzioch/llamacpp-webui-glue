@@ -13,3 +13,4 @@ CUDA_DOCKER_ARCH=all
 
 #default set will be generated from your model files.
 MODELS_TO_RUN=/model-config/default-set.yml
+WEBUI_PORT=7777
