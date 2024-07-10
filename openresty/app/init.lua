@@ -50,6 +50,7 @@ end
 --initialize some dict values
 local llmd = ngx.shared.llm
 llmd:set('current_model','none')
+llmd:set('api_model_info','{}')
 
 scan_gguf_files()
 ngx.timer.every(5,scan_gguf_files) 

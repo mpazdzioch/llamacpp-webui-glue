@@ -37,23 +37,35 @@ end
 local function load_model(pdata)
 
     local llmd = ngx.shared.llm
-    local current = llmd:get('current_model')
-    if current==pdata["model"] then
-        return
+    local ami = cjson.decode(llmd:get('api_model_info'))
+    for _, item in ipairs(ami) do
+        ngx.log(ngx.INFO, 'ami debug: ', item.file, ':',item.status)
+        if item.file == pdata.model and item.status == "active" then
+            ngx.log(ngx.INFO, "found model already loaded: ", pdata.model)
+            return item.url
+        end
     end
-    --kill old model(s) here
+    ngx.log(ngx.INFO, "model needs loading: ", pdata.model)
     
     --run new model
     local model_path = pdata["model"]
     local result, err = call_api(model_path)
-    llmd:set('current_model',pdata['model'])
     ngx.sleep(2)
 
     if err then
         ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
         ngx.say("Error: ", err)
-        return
+        return 
     end
+    llmd:set('api_model_info',cjson.encode(result))
+    for _, item in ipairs(result) do
+        ngx.log(ngx.INFO, 'result debug: ', item.file, ':',item.status)
+        if item.file == pdata.model and item.status == "active" then
+            ngx.log(ngx.INFO, "found model already loaded: ", pdata.model)
+            return item.url
+        end
+    end
+
 end
 
 ngx.req.read_body()
@@ -67,6 +79,8 @@ if data["model"] == vars.ROUTER_MODEL_NAME then
     ngx.log(ngx.INFO, "doing router cli")
     return ngx.exec("@router_cli")
 else
-    load_model(data)
-    return ngx.exec("@llamacpp")
+    local url = load_model(data)
+    ngx.var.llamaurl = url
+    ngx.log(ngx.INFO, "going to ",url)
+    return ngx.exec("@dynamicllamacpp")
 end

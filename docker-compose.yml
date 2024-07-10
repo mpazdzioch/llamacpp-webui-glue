@@ -21,6 +21,7 @@ services:
     volumes:
       - '${MODEL_DIR}:${MODEL_DIR}'
       - ./openresty/app:/app
+      - ./openresty/app/lib/resty:/usr/local/openresty/site/lualib/resty
       - ./openresty/conf:/usr/local/openresty/nginx/conf
       - ./restylogs:/usr/local/openresty/nginx/logs
       - ./llamacpp-logs:/llamacpp-logs
