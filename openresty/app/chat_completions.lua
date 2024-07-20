@@ -39,10 +39,9 @@ local function load_model(pdata)
     local llmd = ngx.shared.llm
     local ami = cjson.decode(llmd:get('api_model_info'))
     for _, item in ipairs(ami) do
-        ngx.log(ngx.INFO, 'ami debug: ', item.file, ':',item.status)
         if item.file == pdata.model and item.status == "active" then
             ngx.log(ngx.INFO, "found model already loaded: ", pdata.model)
-            return item.url
+            return item.host
         end
     end
     ngx.log(ngx.INFO, "model needs loading: ", pdata.model)
@@ -62,7 +61,7 @@ local function load_model(pdata)
         ngx.log(ngx.INFO, 'result debug: ', item.file, ':',item.status)
         if item.file == pdata.model and item.status == "active" then
             ngx.log(ngx.INFO, "found model already loaded: ", pdata.model)
-            return item.url
+            return item.host
         end
     end
 
@@ -79,8 +78,7 @@ if data["model"] == vars.ROUTER_MODEL_NAME then
     ngx.log(ngx.INFO, "doing router cli")
     return ngx.exec("@router_cli")
 else
-    local url = load_model(data)
-    ngx.var.llamaurl = url
-    ngx.log(ngx.INFO, "going to ",url)
-    return ngx.exec("@dynamicllamacpp")
+    local host = load_model(data)
+    ngx.var.llamaurl = host .. "/v1/chat/completions"
+    ngx.log(ngx.INFO, "going to ",ngx.var.llamaurl)
 end

@@ -98,7 +98,7 @@ def new_llama():
                                 start_new_session=True)
     pid = process.pid
     process_counter = process_counter + 1
-    lp = {'pid': pid, 'url': f"http://llamacpp:{port}/v1", 'logfile': logfile,'command': ' '.join(command), 'file': model, 'status':'active', 'file_size_mb':file_size_mb}
+    lp = {'pid': pid, 'host': f"http://llamacpp:{port}", 'logfile': logfile,'command': ' '.join(command), 'file': model, 'status':'active', 'file_size_mb':file_size_mb}
     llama_processes.append(lp)
     
     return jsonify(llama_processes)
