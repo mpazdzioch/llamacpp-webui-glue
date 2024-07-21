@@ -6,10 +6,12 @@ import subprocess
 import signal
 import csv
 import json
+import time
 
 last_port_used = 8080
 process_counter = 0
 llama_processes = []
+models = {}
 app = Flask(__name__)
 
 def generate_llamacpp_command(model, port, defaults):
@@ -27,17 +29,111 @@ def generate_llamacpp_command(model, port, defaults):
     #return ' '.join(cli)
     return cli
 
+def scan_gguf_files():
+    models_dir = os.getenv("MODEL_DIR")
+    if not models_dir:
+        return json.dumps({"error": "MODEL_DIR environment variable is not set"})
+    try:
+        gguf_files = [os.path.join(models_dir, f) for f in os.listdir(models_dir) if f.endswith('.gguf')]
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    
+    gguf_models = {}
+    counter = {}
+    for gguf_file in gguf_files:
+        fname = os.path.basename(gguf_file)
+        mname = fname 
+        # Check if the base name already exists in the counter
+        base_name = fname
+        count = counter.get(base_name, 0)
+        # Append the count to the base name if it's not unique
+        while mname in gguf_models:
+            count += 1
+            mname = f"{base_name}_{count}"
+
+        counter[base_name] = count
+        gguf_models[mname] = {'path': gguf_file, 'id': mname, 'yml_path': f"/model-config/{fname}.yml"}
+    return gguf_models
+
+def scan_yml_files():
+    yml_dirs = ['/model-config',os.getenv("MODEL_DIR")]
+    yml_files = []
+    for dir in yml_dirs:
+        try:
+            yml_files.extend([os.path.join(dir, f) for f in os.listdir(dir) if f.endswith('.yml')])
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+    yml_models = {}
+    counter = {}
+    for yml_file in yml_files:
+        fname = os.path.basename(yml_file)
+        mname = fname 
+        # Check if the base name already exists in the counter
+        base_name = fname
+        count = counter.get(base_name, 0)
+        # Append the count to the base name if it's not unique
+        while mname in yml_models:
+            count += 1
+            mname = f"{base_name}_{count}"
+
+        counter[base_name] = count
+        #read yml file
+        with open(yml_file, 'r') as stream:
+            try:
+                yml_content = yaml.safe_load(stream)
+                if 'file' not in yml_content:
+                    continue
+                if fname.rstrip('.yml')==os.path.basename(yml_content['file']):
+                    continue
+            except yaml.YAMLError as exc:
+                print(exc)
+            yml_models[mname] = {'path': yml_content['file'], 'id': mname, 'yml_path':yml_file}
+
+    return yml_models
+
+@app.route('/api/v1/models', methods=['GET'])
+def get_available_models():
+    global models
+
+    models = scan_yml_files()
+    models.update(scan_gguf_files())
+
+    active_models = [lp['id'] for lp in llama_processes if lp['status'] == 'active']
+    data = []
+    # Add active models to the data list
+    for m in models.values():
+        if m['id'] in active_models:
+            data.append({
+                "id": m['id'],
+                "object": "model",
+                "created": int(time.time()),
+                "owned_by": "organization-owner"
+            })
+    # Add inactive models to the data list
+    for m in models.values():
+        if m['id'] not in active_models:
+            data.append({
+                "id": m['id'],
+                "object": "model",
+                "created": int(time.time()),
+                "owned_by": "organization-owner"
+            })
+
+    return json.dumps({"object": "list", "data": data})
+
 @app.route('/api/llamacpp/new', methods=['POST'])
 def new_llama():
     global process_counter
     global llama_processes
     global last_port_used
+    global models
 
     data = request.json
-    model = data.get('model') #this is gguf modelfile path
-    file_gguf = os.path.basename(model)
-    file_yml = file_gguf+".yml"
-    file_size_bytes = os.path.getsize(model)
+    model_id = data.get('model') #this is model id/key from 'global models'
+    model = models[model_id]
+    app.logger.debug(json.dumps(model))
+
+    file_size_bytes = os.path.getsize(model['path'])
     file_size_mb = file_size_bytes / (1024 * 1024)# Convert bytes to megabytes
     ctx_percent = 10
     model_size_with_ctx = file_size_mb+file_size_mb*(ctx_percent/100)
@@ -64,7 +160,7 @@ def new_llama():
                 print(f"Process {lp['file']} with PID {lp['pid']} has been terminated.")
                 lp['status']='killed'
 
-    yml_content = {'file': model, 'llama-server':[]}
+    yml_content = {'file': model['path'], 'llama-server':[]}
 
     #READ LLAMA CLI PARAM DEFAULTS
     defaults_path = os.getenv('DEFAULT_MODEL_CONFIG')
@@ -77,9 +173,8 @@ def new_llama():
                 print(exc)
 
     #check if yml exists for this gguf and read the config
-    yml_path = os.path.join('/model-config',file_yml)
-    if os.path.exists(yml_path):
-        with open(yml_path, 'r') as stream:
+    if os.path.exists(model['yml_path']):
+        with open(model['yml_path'], 'r') as stream:
             try:
                 yml_content = yaml.safe_load(stream)
             except yaml.YAMLError as exc:
@@ -98,10 +193,10 @@ def new_llama():
                                 start_new_session=True)
     pid = process.pid
     process_counter = process_counter + 1
-    lp = {'pid': pid, 'host': f"http://llamacpp:{port}", 'logfile': logfile,'command': ' '.join(command), 'file': model, 'status':'active', 'file_size_mb':file_size_mb}
+    lp = {'pid': pid, 'id':model_id ,'host': f"http://llamacpp:{port}", 'logfile': logfile,'command': ' '.join(command), 'file': model['path'], 'status':'active', 'file_size_mb':file_size_mb}
     llama_processes.append(lp)
     
     return jsonify(llama_processes)
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000, host='0.0.0.0')  # Listen on port 8080
+    app.run(debug=True, port=5000, host='0.0.0.0')
