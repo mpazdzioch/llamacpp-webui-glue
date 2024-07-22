@@ -7,6 +7,7 @@ import signal
 import csv
 import json
 import time
+import gpu
 
 last_port_used = 8080
 process_counter = 0
@@ -133,33 +134,6 @@ def new_llama():
     model = models[model_id]
     app.logger.debug(json.dumps(model))
 
-    file_size_bytes = os.path.getsize(model['path'])
-    file_size_mb = file_size_bytes / (1024 * 1024)# Convert bytes to megabytes
-    ctx_percent = 10
-    model_size_with_ctx = file_size_mb+file_size_mb*(ctx_percent/100)
-
-    # Get the GPU information
-    result = subprocess.run(['nvidia-smi', '--query-gpu=index,name,memory.total,memory.used,memory.free,utilization.gpu', '--format=csv,noheader,nounits'], stdout=subprocess.PIPE)
-    # Decode the output
-    output = result.stdout.decode('utf-8')
-    # Convert the CSV output to a list of dictionaries
-    gpu_info = list(csv.DictReader(output.splitlines(), fieldnames=['index', 'name', 'memory.total', 'memory.used', 'memory.free', 'utilization.gpu']))
-    total_memory_free_sum = sum(int(item["memory.free"]) for item in gpu_info)
-
-    if total_memory_free_sum<=model_size_with_ctx:
-        #one process at a time now
-        #kill if any active processes running
-        for lp in llama_processes:
-            if lp['status']!='active': continue
-            try:
-                os.kill(lp['pid'], 0)
-            except OSError:
-                print(f"Process {lp['file']} with PID {lp['pid']} does not exist.")
-            else:
-                os.kill(lp['pid'], signal.SIGTERM)
-                print(f"Process {lp['file']} with PID {lp['pid']} has been terminated.")
-                lp['status']='killed'
-
     yml_content = {'file': model['path'], 'llama-server':[]}
 
     #READ LLAMA CLI PARAM DEFAULTS
@@ -177,8 +151,56 @@ def new_llama():
         with open(model['yml_path'], 'r') as stream:
             try:
                 yml_content = yaml.safe_load(stream)
+                if 'llama-server' in defaults:
+                    yml_content['llama-server'].update(defaults['llama-server'])
             except yaml.YAMLError as exc:
                 print(exc)
+    
+    file_size_bytes = os.path.getsize(model['path'])
+    file_size_mb = file_size_bytes / (1024 * 1024)# Convert bytes to megabytes
+    ctx_percent = 10
+    model_size_with_ctx = file_size_mb+file_size_mb*(ctx_percent/100)
+    #only check available vram if model is configured to use it
+    if 'llama-server' in yml_content and yml_content['llama-server']['--gpu-layers']>0:
+
+        gpu_data = gpu.usage_info()
+        if gpu_data['total_memory_mb']<=model_size_with_ctx:
+            message = f"cant fit {model_size_with_ctx}MB model in {gpu_data['total_memory_mb']}MB VRAM"
+            app.logger.error(message)
+            r = {'processes': llama_processes, 'status':'error', 'message': message}
+            return jsonify(r)
+        
+        if gpu_data['total_free_memory_mb']<=model_size_with_ctx:
+            #kill some processes to make room for new model
+            #remove largest first
+            vram_to_free = model_size_with_ctx-gpu_data['total_free_memory_mb']
+            active_procs = [d for d in llama_processes if d['status'] == 'active']
+            active_procs = sorted(active_procs, key=lambda k: k['file_size_mb'], reverse=True)
+            total_mem_size = 0
+            selected_procs = []
+
+            # Iterate through the sorted list of active processes
+            for proc in active_procs:
+                total_mem_size += proc['mem_size']
+                selected_procs.append(proc)
+                if total_mem_size >= vram_to_free:
+                    break
+
+            for lp in selected_procs:
+                try:
+                    os.kill(lp['pid'], signal.SIGTERM)
+                    app.logger.debug(f"Process {lp['file']} with PID {lp['pid']} has been terminated.")
+                    lp['status']='killed'
+                except OSError:
+                    app.logger.error(f"Process {lp['file']} with PID {lp['pid']} does not exist.")
+
+        #recheck after killing
+        gpu_data = gpu.usage_info()
+        if gpu_data['total_free_memory_mb']<=model_size_with_ctx:
+            message = f"tried to kill some llama processes to free up vram but still not enough. avail mem {gpu_data['total_free_memory_mb']} but need {model_size_with_ctx}"
+            app.logger.error(message)
+            r = {'processes': llama_processes, 'status':'error', 'message': message}
+            return jsonify(r)
 
     last_port_used += 1
     port = last_port_used
@@ -193,10 +215,46 @@ def new_llama():
                                 start_new_session=True)
     pid = process.pid
     process_counter = process_counter + 1
-    lp = {'pid': pid, 'id':model_id ,'host': f"http://llamacpp:{port}", 'logfile': logfile,'command': ' '.join(command), 'file': model['path'], 'status':'active', 'file_size_mb':file_size_mb}
+
+    #get real mem footprint of the model after loading
+    time.sleep(2)
+    gpu_data_fresh = gpu.usage_info()
+    #find new process pid on host (different than the one from inside container)
+    gpu_info = {gpu['index']: gpu['processes'] for gpu in gpu_data['gpu_info']}
+    gpu_info_fresh = {gpu['index']: gpu['processes'] for gpu in gpu_data_fresh['gpu_info']}
+
+    # Find process IDs that are in fresh data but not in original data
+    new_pids = []
+
+    for index, processes in gpu_info_fresh.items():
+        for process in processes:
+            if process['pid'] not in [p['pid'] for p in gpu_info[index]]:
+                new_pids.append(process['pid'])
+    host_pid = 0
+    if len(new_pids)>0:
+        new_pids.sort()
+        host_pid = new_pids[-1]
+
+    mem_size = None
+
+    for gpu_info in gpu_data_fresh['gpu_info']:
+        for process_info in gpu_info['processes']:
+            if process_info['pid'] == host_pid:
+                mem_size = process_info['used_memory']
+                break
+        if mem_size is not None:
+            break
+
+    if mem_size is None:
+        app.logger.error(f"Process with PID {host_pid} not found in GPU usage information.")
+    else:
+        app.logger.debug(f"Estimated mem size {model_size_with_ctx} vs real {mem_size} for {model_id}")
+        model_size_with_ctx = mem_size
+
+    lp = {'pid': pid, 'host_pid':host_pid, 'id':model_id ,'host': f"http://llamacpp:{port}", 'logfile': logfile,'command': ' '.join(command), 'file': model['path'], 'status':'active', 'file_size_mb':file_size_mb, 'mem_size': model_size_with_ctx}
     llama_processes.append(lp)
-    
-    return jsonify(llama_processes)
+    r = {'processes': llama_processes, 'status':'success'}
+    return jsonify(r)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000, host='0.0.0.0')

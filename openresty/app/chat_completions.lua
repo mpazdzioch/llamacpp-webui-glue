@@ -24,8 +24,15 @@ local function load_model(pdata)
         ngx.say("Error: ", err)
         return 
     end
-    llmd:set('api_model_info',cjson.encode(result))
-    for _, item in ipairs(result) do
+    if result.status == 'error' then
+        ngx.log(ngx.ERR, "error on model loading from API: ", cjson.encode(result))
+        ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
+        ngx.say("Error: ", result.message)
+        return 
+    end
+
+    llmd:set('api_model_info',cjson.encode(result.processes))
+    for _, item in ipairs(result.processes) do
         ngx.log(ngx.INFO, 'result debug: ', item.id, ':',item.status)
         if item.id == pdata.model and item.status == "active" then
             ngx.log(ngx.INFO, "found model already loaded: ", pdata.model)

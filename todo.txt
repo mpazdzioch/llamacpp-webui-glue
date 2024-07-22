@@ -1,3 +1,3 @@
 - evict enough models to make room in vram, not all
-- show GPU stats in router, clean router message code
+- move router to API?. show GPU stats in router, clean router message code
 - nginx log level configured from .env
