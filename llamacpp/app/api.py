@@ -152,7 +152,7 @@ def new_llama():
             try:
                 yml_content = yaml.safe_load(stream)
                 if 'llama-server' in defaults:
-                    yml_content['llama-server'].update(defaults['llama-server'])
+                    yml_content['llama-server'] = {**yml_content['llama-server'], **{k: v for k, v in defaults['llama-server'].items() if k not in yml_content['llama-server']}}
             except yaml.YAMLError as exc:
                 print(exc)
     
@@ -173,6 +173,7 @@ def new_llama():
         if gpu_data['total_free_memory_mb']<=model_size_with_ctx:
             #kill some processes to make room for new model
             #remove largest first
+            app.logger.debug(f"model size is {model_size_with_ctx} but only {gpu_data['total_free_memory_mb']} available. trying to free some memory now.")
             vram_to_free = model_size_with_ctx-gpu_data['total_free_memory_mb']
             active_procs = [d for d in llama_processes if d['status'] == 'active']
             active_procs = sorted(active_procs, key=lambda k: k['file_size_mb'], reverse=True)
@@ -195,6 +196,7 @@ def new_llama():
                     app.logger.error(f"Process {lp['file']} with PID {lp['pid']} does not exist.")
 
         #recheck after killing
+        time.sleep(2)
         gpu_data = gpu.usage_info()
         if gpu_data['total_free_memory_mb']<=model_size_with_ctx:
             message = f"tried to kill some llama processes to free up vram but still not enough. avail mem {gpu_data['total_free_memory_mb']} but need {model_size_with_ctx}"
@@ -219,39 +221,21 @@ def new_llama():
     #get real mem footprint of the model after loading
     time.sleep(2)
     gpu_data_fresh = gpu.usage_info()
-    #find new process pid on host (different than the one from inside container)
-    gpu_info = {gpu['index']: gpu['processes'] for gpu in gpu_data['gpu_info']}
-    gpu_info_fresh = {gpu['index']: gpu['processes'] for gpu in gpu_data_fresh['gpu_info']}
-
-    # Find process IDs that are in fresh data but not in original data
-    new_pids = []
-
-    for index, processes in gpu_info_fresh.items():
-        for process in processes:
-            if process['pid'] not in [p['pid'] for p in gpu_info[index]]:
-                new_pids.append(process['pid'])
-    host_pid = 0
-    if len(new_pids)>0:
-        new_pids.sort()
-        host_pid = new_pids[-1]
 
     mem_size = None
-
-    for gpu_info in gpu_data_fresh['gpu_info']:
-        for process_info in gpu_info['processes']:
-            if process_info['pid'] == host_pid:
-                mem_size = process_info['used_memory']
-                break
-        if mem_size is not None:
+    for k,v in gpu_data_fresh['process_memory_usage_mb'].items():
+        if int(k) == pid:
+            mem_size = v
             break
 
     if mem_size is None:
-        app.logger.error(f"Process with PID {host_pid} not found in GPU usage information.")
+        app.logger.error(f"Process with PID {pid} not found in GPU usage information.")
     else:
         app.logger.debug(f"Estimated mem size {model_size_with_ctx} vs real {mem_size} for {model_id}")
         model_size_with_ctx = mem_size
 
-    lp = {'pid': pid, 'host_pid':host_pid, 'id':model_id ,'host': f"http://llamacpp:{port}", 'logfile': logfile,'command': ' '.join(command), 'file': model['path'], 'status':'active', 'file_size_mb':file_size_mb, 'mem_size': model_size_with_ctx}
+    lp = {'pid': pid, 'id':model_id ,'host': f"http://llamacpp:{port}", 'logfile': logfile,'command': ' '.join(command), 'file': model['path'], 'status':'active', 'file_size_mb':file_size_mb, 'mem_size': model_size_with_ctx}
+    app.logger.debug(json.dumps(lp))
     llama_processes.append(lp)
     r = {'processes': llama_processes, 'status':'success'}
     return jsonify(r)

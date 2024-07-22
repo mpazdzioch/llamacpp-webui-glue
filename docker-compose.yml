@@ -58,6 +58,7 @@ services:
         UBUNTU_VERSION: "${UBUNTU_VERSION}"
         CUDA_VERSION: "${CUDA_VERSION}"
         CUDA_DOCKER_ARCH: "${CUDA_DOCKER_ARCH}"
+    pid: "host"
     env_file:
       - .env
     environment:
