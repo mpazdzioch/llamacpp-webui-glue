@@ -8,6 +8,7 @@ import csv
 import json
 import time
 import gpu
+import llamacpp
 
 last_port_used = 8080
 process_counter = 0
@@ -15,32 +16,16 @@ llama_processes = []
 models = {}
 app = Flask(__name__)
 
-def generate_llamacpp_command(model, port, defaults):
-    cli = ['/llama-server', '-m', model['file'], '--host', '0.0.0.0', '--port', str(port)]
-    args = {}
-    if 'llama-server' in defaults:
-        for k, v in defaults['llama-server'].items():
-            args[k] = str(v)
-    if 'llama-server' in model and len(model['llama-server'])>0:
-        for k, v in model['llama-server'].items():
-            args[k] = str(v)
-    for k, v in args.items():
-        cli.append(str(k))
-        if v !='no_value_flag': cli.append(v)
-    #return ' '.join(cli)
-    return cli
-
-def scan_gguf_files():
+def scan_model_files():
+    #GGUF files first
     models_dir = os.getenv("MODEL_DIR")
     if not models_dir:
-        return json.dumps({"error": "MODEL_DIR environment variable is not set"})
-    try:
-        gguf_files = [os.path.join(models_dir, f) for f in os.listdir(models_dir) if f.endswith('.gguf')]
-    except Exception as e:
-        return json.dumps({"error": str(e)})
+        raise Exception("MODEL_DIR environment variable is not set")
+    gguf_files = [os.path.join(models_dir, f) for f in os.listdir(models_dir) if f.endswith('.gguf')]
     
-    gguf_models = {}
+    models = {}
     counter = {}
+    yml_paths = []
     for gguf_file in gguf_files:
         fname = os.path.basename(gguf_file)
         mname = fname 
@@ -48,32 +33,32 @@ def scan_gguf_files():
         base_name = fname
         count = counter.get(base_name, 0)
         # Append the count to the base name if it's not unique
-        while mname in gguf_models:
+        while mname in models:
             count += 1
             mname = f"{base_name}_{count}"
 
         counter[base_name] = count
-        gguf_models[mname] = {'path': gguf_file, 'id': mname, 'yml_path': f"/model-config/{fname}.yml"}
-    return gguf_models
+        default_yml_path = f"/model-config/{fname}.yml"
+        yml_paths.append(default_yml_path)
+        models[mname] = {'path': gguf_file, 'id': mname, 'yml_path': default_yml_path}
 
-def scan_yml_files():
+    #now check YMLs
     yml_dirs = ['/model-config',os.getenv("MODEL_DIR")]
     yml_files = []
     for dir in yml_dirs:
-        try:
-            yml_files.extend([os.path.join(dir, f) for f in os.listdir(dir) if f.endswith('.yml')])
-        except Exception as e:
-            return json.dumps({"error": str(e)})
-    yml_models = {}
+        yml_files.extend([os.path.join(dir, f) for f in os.listdir(dir) if f.endswith('.yml')])
+
     counter = {}
     for yml_file in yml_files:
+        if yml_file in yml_paths:
+            continue
         fname = os.path.basename(yml_file)
         mname = fname 
         # Check if the base name already exists in the counter
         base_name = fname
         count = counter.get(base_name, 0)
         # Append the count to the base name if it's not unique
-        while mname in yml_models:
+        while mname in models:
             count += 1
             mname = f"{base_name}_{count}"
 
@@ -84,20 +69,17 @@ def scan_yml_files():
                 yml_content = yaml.safe_load(stream)
                 if 'file' not in yml_content:
                     continue
-                if fname.rstrip('.yml')==os.path.basename(yml_content['file']):
-                    continue
             except yaml.YAMLError as exc:
                 print(exc)
-            yml_models[mname] = {'path': yml_content['file'], 'id': mname, 'yml_path':yml_file}
+            models[mname] = {'path': yml_content['file'], 'id': mname, 'yml_path':yml_file}
 
-    return yml_models
+    return models
 
 @app.route('/api/v1/models', methods=['GET'])
 def get_available_models():
     global models
 
-    models = scan_yml_files()
-    models.update(scan_gguf_files())
+    models = scan_model_files()
 
     active_models = [lp['id'] for lp in llama_processes if lp['status'] == 'active']
     data = []
@@ -134,36 +116,24 @@ def new_llama():
     model = models[model_id]
     app.logger.debug(json.dumps(model))
 
-    yml_content = {'file': model['path'], 'llama-server':[]}
+    yml_content = llamacpp.get_model_config(model)
 
-    #READ LLAMA CLI PARAM DEFAULTS
-    defaults_path = os.getenv('DEFAULT_MODEL_CONFIG')
-    defaults = {}
-    if defaults_path and os.path.exists(defaults_path):
-        with open(defaults_path, 'r') as stream:
-            try:
-                defaults = yaml.safe_load(stream)
-            except yaml.YAMLError as exc:
-                print(exc)
-
-    #check if yml exists for this gguf and read the config
-    if os.path.exists(model['yml_path']):
-        with open(model['yml_path'], 'r') as stream:
-            try:
-                yml_content = yaml.safe_load(stream)
-                if 'llama-server' in defaults:
-                    yml_content['llama-server'] = {**yml_content['llama-server'], **{k: v for k, v in defaults['llama-server'].items() if k not in yml_content['llama-server']}}
-            except yaml.YAMLError as exc:
-                print(exc)
-    
     file_size_bytes = os.path.getsize(model['path'])
     file_size_mb = file_size_bytes / (1024 * 1024)# Convert bytes to megabytes
     ctx_percent = 10
     model_size_with_ctx = file_size_mb+file_size_mb*(ctx_percent/100)
+
+    gpu_data = gpu.usage_info()
+    #update vram mem usage for each running model in llama_processes
+    for p in llama_processes:
+        pid = str(p['pid'])
+        if pid in gpu_data['process_memory_usage_mb']:
+            p['mem_size'] = gpu_data['process_memory_usage_mb'][pid]
+    app.logger.debug(json.dumps(llama_processes))
+
     #only check available vram if model is configured to use it
     if 'llama-server' in yml_content and yml_content['llama-server']['--gpu-layers']>0:
-
-        gpu_data = gpu.usage_info()
+        
         if gpu_data['total_memory_mb']<=model_size_with_ctx:
             message = f"cant fit {model_size_with_ctx}MB model in {gpu_data['total_memory_mb']}MB VRAM"
             app.logger.error(message)
@@ -190,13 +160,13 @@ def new_llama():
             for lp in selected_procs:
                 try:
                     os.kill(lp['pid'], signal.SIGTERM)
-                    app.logger.debug(f"Process {lp['file']} with PID {lp['pid']} has been terminated.")
+                    app.logger.debug(f"Process {lp['id']} with PID {lp['pid']} has been terminated.")
                     lp['status']='killed'
                 except OSError:
-                    app.logger.error(f"Process {lp['file']} with PID {lp['pid']} does not exist.")
+                    app.logger.error(f"Process {lp['id']} with PID {lp['pid']} does not exist.")
 
         #recheck after killing
-        time.sleep(2)
+        time.sleep(3)
         gpu_data = gpu.usage_info()
         if gpu_data['total_free_memory_mb']<=model_size_with_ctx:
             message = f"tried to kill some llama processes to free up vram but still not enough. avail mem {gpu_data['total_free_memory_mb']} but need {model_size_with_ctx}"
@@ -206,7 +176,7 @@ def new_llama():
 
     last_port_used += 1
     port = last_port_used
-    command = generate_llamacpp_command(yml_content,port,defaults)
+    command = llamacpp.generate_cli_command(yml_content,port)
     logfile = f'/llamacpp-logs/log_{process_counter}.txt'
     with open(logfile, 'w') as log_file:
         process = subprocess.Popen(command, 
@@ -218,23 +188,7 @@ def new_llama():
     pid = process.pid
     process_counter = process_counter + 1
 
-    #get real mem footprint of the model after loading
-    time.sleep(2)
-    gpu_data_fresh = gpu.usage_info()
-
-    mem_size = None
-    for k,v in gpu_data_fresh['process_memory_usage_mb'].items():
-        if int(k) == pid:
-            mem_size = v
-            break
-
-    if mem_size is None:
-        app.logger.error(f"Process with PID {pid} not found in GPU usage information.")
-    else:
-        app.logger.debug(f"Estimated mem size {model_size_with_ctx} vs real {mem_size} for {model_id}")
-        model_size_with_ctx = mem_size
-
-    lp = {'pid': pid, 'id':model_id ,'host': f"http://llamacpp:{port}", 'logfile': logfile,'command': ' '.join(command), 'file': model['path'], 'status':'active', 'file_size_mb':file_size_mb, 'mem_size': model_size_with_ctx}
+    lp = {'pid': pid, 'id':model_id ,'host': f"http://llamacpp:{port}", 'logfile': logfile,'command': ' '.join(command), 'file': model['path'], 'status':'active', 'file_size_mb':file_size_mb, 'mem_size': 0}
     app.logger.debug(json.dumps(lp))
     llama_processes.append(lp)
     r = {'processes': llama_processes, 'status':'success'}

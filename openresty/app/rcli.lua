@@ -14,22 +14,23 @@ local function generateUniqueString()
     return tostring(timestamp) .. tostring(random_number) .. unique_string
 end
 
-local function test_chunked(data)
+local function test_chunked(req_data,message)
     local ts = os.time()
     local id = generateUniqueString()
     local d1 = {
         choices = {
             {
-                finish_reason = cjson.null,
+                --finish_reason = cjson.null,
+                finish_reason = 'stop',
                 index = 0,
                 delta = {
-                    content = "fojer🔥🔥🔥🔥fojer"
+                    content = message
                 }
             }
         },
         created = ts,
         id = id,
-        model = data["model"],
+        model = req_data["model"],
         object = "chat.completion.chunk"
     }
     local json = cjson.encode(d1)
@@ -38,43 +39,21 @@ local function test_chunked(data)
     ngx.header["Connection"] = "keep-alive"
     ngx.print("data: " .. json .. "\n\n")
     ngx.flush()
-
-    local d3 = {
-        choices = {
-            {
-                finish_reason = "stop",
-                index = 0,
-                delta = {}
-            }
-        },
-        created = ts,
-        id = id,
-        model = data["model"],
-        object = "chat.completion.chunk",
-        usage = {
-            prompt_tokens = 1,
-            completion_tokens = 1,
-            total_tokens = 1
-        }
-    }
-    local json = cjson.encode(d3)
-    ngx.print("data: " .. json .. "\n\n")
-    ngx.flush()
 end
 
-local function test(data)
+local function test(req_data, message)
     local data = {
-        id = data["model"],
+        id = req_data["model"],
         object = "chat.completion",
         created = os.time(),
-        model = data["model"],
+        model = req_data["model"],
         system_fingerprint = "uuuuu",
         choices = {
             {
                 index = 0,
                 message = {
                     role = "assistant",
-                    content = "🔥🔥🔥🔥fojer",
+                    content = message,
                 },
                 logprobs = nil,
                 finish_reason = "stop"
@@ -101,7 +80,7 @@ if not data then
 end
 
 if data["stream"] == false then
-    test(data)
+    test(data, "oneoff reply test")
 else
-    test_chunked(data)
+    test_chunked(data, "chunked reply test")
 end
