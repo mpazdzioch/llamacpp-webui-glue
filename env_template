@@ -1,8 +1,3 @@
-#current user's group id and user id so we don't create new files as root
-#to show group id: `id -g`, `id -u` to show user id
-GID=
-UID=
-
 #path to directory with .gguf files. It will be mounted with the same path inside containers
 MODEL_DIR=
 
@@ -11,6 +6,4 @@ UBUNTU_VERSION=22.04
 CUDA_VERSION=12.5.0
 CUDA_DOCKER_ARCH=all
 
-#default set will be generated from your model files.
-MODELS_TO_RUN=/model-config/default-set.yml
 WEBUI_PORT=7777

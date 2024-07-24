@@ -3,16 +3,14 @@ services:
   webui:
     image: ghcr.io/open-webui/open-webui:main
     volumes:
-      - './webui-data:/app/backend/data'
+      - './data/webui-data:/app/backend/data'
     ports:
       - "${WEBUI_PORT}:8080"
-    env_file:
-      - ./generated-config/env_webui
     environment:
       WEBUI_AUTH: 'False'
       ENABLE_OLLAMA_API: 'False'
-    # depends_on:
-    #   - scripts
+      OPENAI_API_BASE_URLS: 'http://openresty:80/v1'
+      OPENAI_API_KEYS: 'sk-124781258123'
 
   openresty:
     image: openresty/openresty:latest
@@ -23,33 +21,13 @@ services:
       - ./openresty/app:/app
       - ./openresty/app/lib/resty:/usr/local/openresty/site/lualib/resty
       - ./openresty/conf:/usr/local/openresty/nginx/conf
-      - ./restylogs:/usr/local/openresty/nginx/logs
-      - ./llamacpp-logs:/llamacpp-logs
+      - ./data/restylogs:/usr/local/openresty/nginx/logs
     env_file:
       - .env
     environment:
       - NGINX_CONF_PATH=/usr/local/openresty/nginx/conf
     depends_on:
       - llamacpp
-     # - scripts
-
-  # scripts:
-  #   build: scripts
-  #   env_file:
-  #     .env
-  #   user: "${UID}:${GID}"
-  #   ports:
-  #     - "127.0.0.1:81:80" #for debugging
-  #   volumes:
-  #     - './scripts/app:/app'
-  #     - '${MODEL_DIR}:${MODEL_DIR}'
-  #     - './model-config:/model-config'
-  #     - './generated-config:/generated-config'
-  #   environment:
-  #     GENERATED_CONFIG_DIR: /generated-config
-  #     DEFAULT_MODEL_CONFIG: /model-config/default-config.yml #OPTIONAL
-  #     MODEL_DIRS: ${MODEL_DIR}
-  #   command: ["tail","-f","/dev/null"]
 
   llamacpp:
     build:
@@ -68,19 +46,13 @@ services:
       - "127.0.0.1:5000:5000" #for debugging
     volumes:
       - '${MODEL_DIR}:${MODEL_DIR}'
-      - './generated-config/supervisord.conf:/etc/supervisor/supervisord.conf'
       - './llamacpp/app:/app'
-      - ./llamacpp-logs:/llamacpp-logs
+      - ./data/llamacpp-logs:/llamacpp-logs
       - './model-config:/model-config'
-    #command: ["tail","-f","/dev/null"]
-    #command: ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf", "--nodaemon"]
     command: ["/usr/bin/python3","api.py"]
-    #depends_on:
-    #  - scripts
-    deploy: #CONFIGURE YOUR GPU'S OR REMOVE WHOLE DEPLOY SECTION IF USING CPU ONLY
+    deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['0','1'] 
               capabilities: [gpu]

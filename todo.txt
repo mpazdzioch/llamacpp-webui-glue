@@ -1,2 +1,0 @@
-- nginx log level configured from .env
-- readme

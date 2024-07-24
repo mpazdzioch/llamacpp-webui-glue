@@ -2,3 +2,4 @@
 *
 # Except this one
 !.gitignore
+!default-config.yml

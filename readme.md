@@ -1,13 +1,13 @@
 ## Description
 
-This repo links [llama.cpp](https://github.com/ggerganov/llama.cpp) and [open-webui](https://github.com/open-webui/open-webui) in single docker-compose.yml project and sprinkles couple of helper scripts on top. 
-You can define model sets as .yml files with optional command line options for llama-server for each model. One llama-server instance for each active model in set will be launched and exposed to webui.
+This repo links [llama.cpp](https://github.com/ggerganov/llama.cpp) and [open-webui](https://github.com/open-webui/open-webui) in single docker-compose.yml project with simple python API in the middle to launch/kill llama-server instances on demand. The api has bare-bones VRAM management too so it will remove older models from VRAM when there's not enough for new models.
+There is no such functionality for RAM, also no CPU only inference setup but I will add it soon.
 
 Services:
 
 - `webui` is a stock docker image from [open-webui](https://github.com/open-webui/open-webui)
-- `scripts` is an environment to run the helper scripts
-- `llamacpp` for launching multiple llama-server using supervisord
+- `openresty` is a stock docker image for openresty to proxy openAI api requests from webui to api. Some functionality is implemented as LUA scripts
+- `llamacpp` for launching multiple llama-server instances through python Flask API. Dockerfile for this service is based on official llamacpp dockerfile + python for the API.
 
 ## Quick start
 
@@ -22,39 +22,13 @@ cd llamacpp-webui-glue
 
 ### 1. Set env vars in .env file
 
-- .env file. Copy the template file to *.env*: 
-  ```bash
-  cp env_template .env
-  ```
-  Edit the *.env* file filling all missing values for your system.
-
-- llamacpp service in `docker-compose.yml`:
-  - adjust your GPU/CUDA settings in `deploy` and ARGS section
-
-### 2. Run helper script to generate .yml for your model files
+Copy the template file to *.env*: 
 ```bash
-touch generated-config/env_webui generated-config/supervisord.conf
-docker compose run scripts python scan_model_dirs.py
+cp env_template .env
 ```
+Edit the *.env* file filling all missing values for your system. In most cases pointing the `MODEL_DIR` to your gguf files folder is all you need to do.
 
-This script will look for .gguf files in path set in `MODEL_DIRS` env var.
-It will generate .yml file for each .gguf file, `default-config.yml` and `default-set.yml`. All files are saved to `./model-config` folder.
-
-### 3. Edit ./model-config/default-set.yml to select which models to load on first start
-The ones set to active:1 will be loaded.
-For example:
-```yaml
-- active: 0
-  file: /model-config/Yi-1.5-34B-Chat-Q6_K.gguf.yml
-- active: 1
-  file: /model-config/Phi-3-mini-4k-instruct-q4.gguf.yml
-- active: 0
-  file: /model-config/deepseek-coder-symlink:33b-instruct-q4_0.gguf.yml
-- active: 0
-  file: /model-config/DeepSeek-Coder-V2-Lite-Instruct-Q6_K.gguf.yml
-```
-
-### 4. Run the project
+### 2. Run the project
 This step may take a while because docker images have to be built. First launch of webui also does some init stuff. 
 ```bash
 docker compose up
@@ -66,18 +40,11 @@ The webui interface will be available on [localhost:7777](http://localhost:7777)
 1. There are no models to choose from the dropdown list in webui:
    - Check the logs from llamacpp container for details. For some reason llama-server failed to load the model(s)
 
-2. Not all of the models activated in set file are available in webui:
-   - When you try to load more models that your GPU/CPU memory can hold, some will fail to load
-
 ## Model configuration details
 
-- For minimal configuration, only the `./model-config/defaul-set.yml` file is needed that lists .gguf file(s) to run.
-  Example of minimal config:
-  ```yaml
-  - active: 1
-    file: /home/models/Phi-3-mini-4k-instruct-q4.gguf
-  ```
-- You can use paths to .gguf files directly in model set or create .yml file for a model with llama-server options that you want to run this model with. These files live in `./model-config` and can be auto generated from your model path using `scan_model_dirs.py` script. 
+- You only need folder with .gguf file(s) to use this project. Settings from `./model-config/defaul-config.yml` will be aplied to all models. This file contains default llama-server cli options.
+
+- However, when you want to define custom llama-server options for some models, for example custom GPU split or context size or anything else that llama-server allows using cli options - create a .yml file in `./model-config`. When your model file is named `codestral:22b-v0.1-q8_0.gguf`, create `./model-config/codestral:22b-v0.1-q8_0.gguf.yml` and options from this file will be automatically used when launching this model.
 
   Example `codestral:22b-v0.1-q8_0.gguf.yml`:
   ```yaml
@@ -95,37 +62,26 @@ The webui interface will be available on [localhost:7777](http://localhost:7777)
     docker compose run llamacpp /llama-server -h
     ```
 
-- `./model-config/defaul-config.yml` - settings from this file will be aplied to all models but if same args are present in model .yml file they have higher priority. This file is auto generated in `scan_model_dirs.py` but it's optional.
+## Folders
 
-- `./model-config/default-set.yml` - this file is generated by `scan_model_dirs.py` script and contains a list of all models found. It's simply a list of models (models represented by path to .yml model config file or .gguf) that should be loaded on `docker compose up`. Only models with `active:1` will be loaded so you can switch models on/off without removing entries from the file.
+- `data`
+  - `llamacpp-logs`: log files for each running llama-server process
+  - `restylogs`: logs from openresty proxy and LUA scripts
+  - `webui-data`: data folder for webui
 
-  Example `default-set.yml`:
-  ```yaml
-  - active: 0
-    file: /model-config/Yi-1.5-34B-Chat-Q6_K.gguf.yml
-  - active: 1
-    file: /home/models/Phi-3-mini-4k-instruct-q4.gguf
-  - active: 1
-    file: /model-config/dscoder-v2-16b.gguf.yml
-    llama-server:
-      --temp: 0
-      --ctx-size: 8192
-  ```
-  With this file, 2 instances of llama-server will be started on `docker compose up` and *Phi-3-mini-4k-instruct-q4.gguf* and *dscoder-v2-16b.gguf* will be run. Settings for llama-server can also be added in set file and they have the highest priority so will overwrite settings in default-config.yml and model .yml files.
-  The idea is that multiple model sets can be defined but only one set is being run at the same time. Which set to run is defined in `MODELS_TO_RUN` env var.
+- `llamacpp`
+  - `app`: python API for starting/stopping llama-server instances
+  - `llama.cpp`: llama.cpp github repo as submodule. Whenever you want to update to newer version of llamacpp - just pull inside this repo and `docker compose build llamacpp`
 
+- `openresty`: nginx configuration and couple of LUA scripts to proxy openAI api requests to flask API
+
+- `model-config`: we keep all .yml files with custom model configs here
 
 ## Scripts
 
-### gen.py
-```bash
-docker compose run scripts python gen.py
-```
-it's run automatically on `docker-compose up` and generates `env_webui` env vars file for `webui` service and `supervisord.conf` for launching llama.cpp server instances.
-
 ### scan_model_dirs.py
 ```bash
-docker compose run scripts python scan_model_dirs.py
+docker compose run llamacpp python3 scan_model_dirs.py
 ```
-This script will look for .gguf files in path set in `MODEL_DIRS` env var in docker-compose.yml
-It will generate .yml file for each .gguf file, `default-config.yml` and `default-set.yml`. All files are saved to `./model-config` folder.
+This script will look for .gguf files in path set in `MODEL_DIR` env var in docker-compose.yml
+It will generate .yml file for each .gguf file so it's easier to add custom llamacpp configuration for each model. All files are saved to `./model-config` folder.
