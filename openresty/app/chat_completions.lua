@@ -43,7 +43,23 @@ local function load_model(pdata)
 end
 
 ngx.req.read_body()
-local data, err = cjson.decode(ngx.req.get_body_data())
+local body = ngx.req.get_body_data()
+if body == nil then
+    local file = ngx.req.get_body_file()
+    if file then
+        local file_handle, err = io.open(file, "r")
+        if not file_handle then
+            ngx.log(ngx.ERR, "failed to open body file: ", err)
+            ngx.exit(ngx.HTTP_BAD_REQUEST)
+        end
+        body = file_handle:read("*a")
+        file_handle:close()
+    else
+        ngx.log(ngx.ERR, "failed to read request body")
+        ngx.exit(ngx.HTTP_BAD_REQUEST)
+    end
+end
+local data, err = cjson.decode(body)
 if err then
     ngx.log(ngx.ERR, "failed to decode json: ", err)
     ngx.exit(ngx.HTTP_BAD_REQUEST)
