@@ -35,10 +35,9 @@ RUN apt-get update && \
 COPY --from=build /app/llama-server /llama-server
 
 #OUR STUFF
-RUN apt-get install -y supervisor
-
 ADD app /app
 WORKDIR /app
 
+RUN apt-get update
 RUN apt-get install -y python3 python3-pip
 RUN pip install -r requirements.txt

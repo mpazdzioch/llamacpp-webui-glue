@@ -35,8 +35,25 @@ local function load_model(pdata)
     for _, item in ipairs(result.processes) do
         ngx.log(ngx.INFO, 'result debug: ', item.id, ':',item.status)
         if item.id == pdata.model and item.status == "active" then
-            ngx.log(ngx.INFO, "found model already loaded: ", pdata.model)
-            return item.host
+            local retry = 0
+            while retry < 60 do
+                local response, err = api.call_llamaserver(item.host,'/health',nil)
+                if err then
+                    ngx.log(ngx.WARN, "error checking model health: ", err)
+                    ngx.sleep(1)
+                    retry = retry + 1
+                elseif response.status == "ok" then
+                    ngx.log(ngx.INFO, "found model already loaded: ", pdata.model)
+                    return item.host
+                else
+                    ngx.sleep(1)
+                    retry = retry + 1
+                end
+            end
+            ngx.log(ngx.ERR, "failed to get healthy model after 60 retries: ", pdata.model)
+            ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
+            ngx.say("Error: failed to load model")
+            return
         end
     end
 
