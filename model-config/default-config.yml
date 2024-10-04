@@ -1,3 +1,4 @@
 llama-server:
   --gpu-layers: 999
   --ctx-size: 4096
+  --temp: 0

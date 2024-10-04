@@ -180,6 +180,7 @@ def new_llama():
     logfile = f'/llamacpp-logs/log_{process_counter}.txt'
     with open(logfile, 'w') as log_file:
         process = subprocess.Popen(command, 
+                                cwd="/",
                                 stdout=log_file, 
                                 stderr=log_file, 
                                 stdin=subprocess.PIPE, 

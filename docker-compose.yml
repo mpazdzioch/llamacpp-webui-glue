@@ -2,6 +2,7 @@ services:
 
   webui:
     image: ghcr.io/open-webui/open-webui:main
+    restart: always
     volumes:
       - './data/webui-data:/app/backend/data'
     ports:
@@ -14,6 +15,7 @@ services:
 
   openresty:
     image: openresty/openresty:latest
+    restart: always
     ports:
       - "127.0.0.1:80:80"
     volumes:
@@ -37,6 +39,7 @@ services:
         CUDA_VERSION: "${CUDA_VERSION}"
         CUDA_DOCKER_ARCH: "${CUDA_DOCKER_ARCH}"
     pid: "host"
+    restart: always
     env_file:
       - .env
     environment:
@@ -46,7 +49,7 @@ services:
       - "127.0.0.1:5000:5000" #for debugging
     volumes:
       - '${MODEL_DIR}:${MODEL_DIR}'
-      - './llamacpp/app:/app'
+      - './llamacpp/app:/api'
       - ./data/llamacpp-logs:/llamacpp-logs
       - './model-config:/model-config'
     command: ["/usr/bin/python3","api.py"]
@@ -55,4 +58,5 @@ services:
         reservations:
           devices:
             - driver: nvidia
+              count: all
               capabilities: [gpu]
