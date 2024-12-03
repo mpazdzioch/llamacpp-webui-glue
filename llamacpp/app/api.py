@@ -71,6 +71,8 @@ def scan_model_files():
                     continue
             except yaml.YAMLError as exc:
                 print(exc)
+            if 'model-id' in yml_content:
+                mname=yml_content['model-id']
             models[mname] = {'path': yml_content['file'], 'id': mname, 'yml_path':yml_file}
 
     return models

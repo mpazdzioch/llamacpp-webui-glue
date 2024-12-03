@@ -10,20 +10,23 @@ services:
     environment:
       WEBUI_AUTH: 'False'
       ENABLE_OLLAMA_API: 'False'
-      OPENAI_API_BASE_URLS: 'http://openresty:80/v1'
-      OPENAI_API_KEYS: 'sk-124781258123'
+      OPENAI_API_BASE_URLS: 'http://openresty:80/v1;${OPENAI_API_BASE_URLS}'
+      OPENAI_API_KEYS: 'sk-ip'
 
   openresty:
     image: openresty/openresty:latest
     restart: always
-    ports:
-      - "127.0.0.1:80:80"
+    # ports:
+    #   - 8041:80
+    #   - 443:443
     volumes:
       - '${MODEL_DIR}:${MODEL_DIR}'
       - ./openresty/app:/app
       - ./openresty/app/lib/resty:/usr/local/openresty/site/lualib/resty
       - ./openresty/conf:/usr/local/openresty/nginx/conf
+      - ./openresty/conf.d:/usr/local/openresty/nginx/conf.d
       - ./data/restylogs:/usr/local/openresty/nginx/logs
+      - ./certs:/certs
     env_file:
       - .env
     environment:
@@ -44,9 +47,9 @@ services:
       - .env
     environment:
       DEFAULT_MODEL_CONFIG: /model-config/default-config.yml #OPTIONAL
-    ports:
-      - "127.0.0.1:8081:8081" #for debugging
-      - "127.0.0.1:5000:5000" #for debugging
+    # ports:
+    #   - "8081:8081" #for debugging
+    #   - "127.0.0.1:5000:5000" #for debugging
     volumes:
       - '${MODEL_DIR}:${MODEL_DIR}'
       - './llamacpp/app:/api'
