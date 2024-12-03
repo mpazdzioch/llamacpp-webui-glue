@@ -3,7 +3,7 @@ MODEL_DIR=
 
 #configuration for llama.cpp build. should match the host CUDA version and ARCH
 UBUNTU_VERSION=22.04
-CUDA_VERSION=12.7.0
+CUDA_VERSION=12.6.0
 CUDA_DOCKER_ARCH=86
 
 WEBUI_PORT=7777
