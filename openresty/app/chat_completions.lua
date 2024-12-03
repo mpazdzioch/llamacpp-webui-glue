@@ -36,7 +36,7 @@ local function load_model(pdata)
         ngx.log(ngx.INFO, 'result debug: ', item.id, ':',item.status)
         if item.id == pdata.model and item.status == "active" then
             local retry = 0
-            while retry < 120 do
+            while retry < 150 do
                 local response, err = api.call_llamaserver(item.host,'/health',nil)
                 if err then
                     ngx.log(ngx.WARN, "error checking model health: ", err)
