@@ -1,0 +1,59 @@
+services:
+
+  webui:
+    image: ghcr.io/open-webui/open-webui:main
+    restart: always
+    volumes:
+      - './data/webui-data:/app/backend/data'
+    ports:
+      - "${WEBUI_PORT}:8080"
+    environment:
+      WEBUI_AUTH: 'False'
+      ENABLE_OLLAMA_API: 'False'
+      OPENAI_API_BASE_URLS: 'http://openresty:80/v1;${OPENAI_API_BASE_URLS}'
+      OPENAI_API_KEYS: '${OPENAI_API_KEYS}'
+
+  openresty:
+    image: openresty/openresty:latest
+    restart: always
+    ports:
+      - 8041:80
+      - 443:443
+    volumes:
+      - '${MODEL_DIR}:${MODEL_DIR}'
+      - ./openresty/app:/app
+      - ./openresty/app/lib/resty:/usr/local/openresty/site/lualib/resty
+      - ./openresty/conf:/usr/local/openresty/nginx/conf
+      - ./openresty/conf.d:/usr/local/openresty/nginx/conf.d
+      - ./data/restylogs:/usr/local/openresty/nginx/logs
+      - ./certs:/certs
+    env_file:
+      - .env
+    environment:
+      - NGINX_CONF_PATH=/usr/local/openresty/nginx/conf
+    depends_on:
+      - llamacpp
+
+  llamacpp:
+    build:
+      context: llamacpp
+      dockerfile: cpu.Dockerfile
+      args:
+        UBUNTU_VERSION: "${UBUNTU_VERSION}"
+        TARGETARCH: "amd64"
+    pid: "host"
+    restart: always
+    env_file:
+      - .env
+    environment:
+      DEFAULT_MODEL_CONFIG: /model-config/default-config-cpu.yml #OPTIONAL
+    ports:
+      - "8081:8081" #for debugging
+      - "127.0.0.1:5000:5000" #for debugging
+    volumes:
+      - '${MODEL_DIR}:${MODEL_DIR}'
+      - './llamacpp/app:/api'
+      - ./data/llamacpp-logs:/llamacpp-logs
+      - './model-config:/model-config'
+    command: ["/usr/bin/python3","api.py"]
+

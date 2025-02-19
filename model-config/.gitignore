@@ -2,5 +2,5 @@
 *
 # Except this one
 !.gitignore
-!default-config.yml
+!default-config*
 !*.example

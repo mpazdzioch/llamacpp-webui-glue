@@ -125,16 +125,15 @@ def new_llama():
     ctx_percent = 10
     model_size_with_ctx = file_size_mb+file_size_mb*(ctx_percent/100)
 
-    gpu_data = gpu.usage_info()
-    #update vram mem usage for each running model in llama_processes
-    for p in llama_processes:
-        pid = str(p['pid'])
-        if pid in gpu_data['process_memory_usage_mb']:
-            p['mem_size'] = gpu_data['process_memory_usage_mb'][pid]
-    app.logger.debug(json.dumps(llama_processes))
-
     #only check available vram if model is configured to use it
     if 'llama-server' in yml_content and yml_content['llama-server']['--gpu-layers']>0:
+        gpu_data = gpu.usage_info()
+        #update vram mem usage for each running model in llama_processes
+        for p in llama_processes:
+            pid = str(p['pid'])
+            if pid in gpu_data['process_memory_usage_mb']:
+                p['mem_size'] = gpu_data['process_memory_usage_mb'][pid]
+        app.logger.debug(json.dumps(llama_processes))
         
         if gpu_data['total_memory_mb']<=model_size_with_ctx:
             message = f"cant fit {model_size_with_ctx}MB model in {gpu_data['total_memory_mb']}MB VRAM"
