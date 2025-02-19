@@ -11,14 +11,14 @@ services:
       WEBUI_AUTH: 'False'
       ENABLE_OLLAMA_API: 'False'
       OPENAI_API_BASE_URLS: 'http://openresty:80/v1;${OPENAI_API_BASE_URLS}'
-      OPENAI_API_KEYS: 'sk-ip'
+      OPENAI_API_KEYS: '${OPENAI_API_KEYS}'
 
   openresty:
     image: openresty/openresty:latest
     restart: always
-    # ports:
-    #   - 8041:80
-    #   - 443:443
+    ports:
+      - 8041:80
+      - 443:443
     volumes:
       - '${MODEL_DIR}:${MODEL_DIR}'
       - ./openresty/app:/app
@@ -47,9 +47,9 @@ services:
       - .env
     environment:
       DEFAULT_MODEL_CONFIG: /model-config/default-config.yml #OPTIONAL
-    # ports:
-    #   - "8081:8081" #for debugging
-    #   - "127.0.0.1:5000:5000" #for debugging
+    ports:
+      - "8081:8081" #for debugging
+      - "127.0.0.1:5000:5000" #for debugging
     volumes:
       - '${MODEL_DIR}:${MODEL_DIR}'
       - './llamacpp/app:/api'

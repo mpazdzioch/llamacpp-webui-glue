@@ -1,0 +1,15 @@
+file: /models/Qwen2.5-72B-Q8.gguf
+model-id: Qwen2.5-72B-Q8-8K-SD
+llama-server:
+  --gpu-layers: 999
+  --ctx-size: 8192
+  --seed: 1337
+  --flash-attn: no_value_flag
+  --top-k: 1
+  --samplers: "temperature;top_k;top_p"
+  --model-draft: /models/Qwen2.5-0.5B-Q8.gguf
+  --gpu-layers-draft: 999
+  --device-draft: CUDA0
+  --draft-min: 5
+  --draft-max: 16
+  --draft-p-min: 0.5

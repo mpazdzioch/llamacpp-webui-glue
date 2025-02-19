@@ -1,0 +1,9 @@
+file: /models/DeepSeek-R1/DeepSeek-R1-Q2_K_L-00001-of-00005.gguf
+model-id: DeepSeek-R1-Q2
+llama-server:
+  --gpu-layers: 16
+  --split-mode: row
+  --ctx-size: 8192
+  --seed: 1337
+  --temp: 0.6
+  --cache-type-k: q4_0
