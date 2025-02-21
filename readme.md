@@ -42,7 +42,7 @@ The webui interface will be available on [localhost:7777](http://localhost:7777)
 
 ## Model configuration details
 
-- You only need folder with .gguf file(s) to use this project. Settings from `./model-config/defaul-config.yml` will be aplied to all models. This file contains default llama-server cli options.
+- You only need folder with .gguf file(s) to use this project. Settings from `./model-config/defaul-config.yml` will be applied to all models. This file contains default llama-server cli options.
 
 - However, when you want to define custom llama-server options for some models, for example custom GPU split or context size or anything else that llama-server allows using cli options - create a .yml file in `./model-config`. When your model file is named `codestral:22b-v0.1-q8_0.gguf`, create `./model-config/codestral:22b-v0.1-q8_0.gguf.yml` and options from this file will be automatically used when launching this model.
 
