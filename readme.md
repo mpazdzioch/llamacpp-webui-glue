@@ -1,7 +1,7 @@
 ## Description
 
 This repo links [llama.cpp](https://github.com/ggerganov/llama.cpp) and [open-webui](https://github.com/open-webui/open-webui) in single docker-compose.yml project with simple python API in the middle to launch/kill llama-server instances on demand. The api has bare-bones VRAM management too so it will remove older models from VRAM when there's not enough for new models.
-There is no such functionality for RAM, also no CPU only inference setup but I will add it soon.
+There is no such functionality for RAM though.
 
 Services:
 
@@ -33,6 +33,12 @@ This step may take a while because docker images have to be built. First launch 
 ```bash
 docker compose up
 ```
+or for CPU-only inference
+
+```bash
+docker compose -f docker-compose-cpu.yml up
+```
+
 The webui interface will be available on [localhost:7777](http://localhost:7777). If the ui loads but there's no models to choose from the dropdown list, check the docker compose logs. Both webui and llama instances log everything to stdout of docker compose.
 
 ## Common problems
