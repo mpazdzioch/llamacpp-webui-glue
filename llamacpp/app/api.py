@@ -9,6 +9,8 @@ import json
 import time
 import gpu
 import llamacpp
+import model_files
+import time
 
 last_port_used = 8080
 process_counter = 0
@@ -16,112 +18,48 @@ llama_processes = []
 models = {}
 app = Flask(__name__)
 
-def scan_model_files():
-    #GGUF files first
-    models_dir = os.getenv("MODEL_DIR")
-    if not models_dir:
-        raise Exception("MODEL_DIR environment variable is not set")
-    gguf_files = [os.path.join(models_dir, f) for f in os.listdir(models_dir) if f.endswith('.gguf')]
-    
-    models = {}
-    counter = {}
-    yml_paths = []
-    for gguf_file in gguf_files:
-        fname = os.path.basename(gguf_file)
-        mname = fname 
-        # Check if the base name already exists in the counter
-        base_name = fname
-        count = counter.get(base_name, 0)
-        # Append the count to the base name if it's not unique
-        while mname in models:
-            count += 1
-            mname = f"{base_name}_{count}"
+def cleanup_processes():
+    global llama_processes
+    running_processes = []
+    current_time = int(time.time())  # Get the current Unix timestamp
 
-        counter[base_name] = count
-        default_yml_path = f"/model-config/{fname}.yml"
-        yml_paths.append(default_yml_path)
-        models[mname] = {'path': gguf_file, 'id': mname, 'yml_path': default_yml_path}
+    for lp in llama_processes:
+        pid = lp['pid']
+        status = lp['status']
+        timestamp = lp['timestamp']
 
-    #now check YMLs
-    yml_dirs = ['/model-config',os.getenv("MODEL_DIR")]
-    yml_files = []
-    for dir in yml_dirs:
-        yml_files.extend([os.path.join(dir, f) for f in os.listdir(dir) if f.endswith('.yml')])
-
-    counter = {}
-    for yml_file in yml_files:
-        if yml_file in yml_paths:
-            continue
-        fname = os.path.basename(yml_file)
-        mname = fname 
-        # Check if the base name already exists in the counter
-        base_name = fname
-        count = counter.get(base_name, 0)
-        # Append the count to the base name if it's not unique
-        while mname in models:
-            count += 1
-            mname = f"{base_name}_{count}"
-
-        counter[base_name] = count
-        #read yml file
-        with open(yml_file, 'r') as stream:
+        if status == 'pending' and pid == 0:
+            # Check if the process is older than 10 minutes
+            if current_time - timestamp > 600:  # 600 seconds = 10 minutes
+                app.logger.debug(f"Process {lp['id']} with PID {pid} is pending and older than 10 minutes. Removing from list.")
+                lp['status'] = 'terminated'
+            else:
+                running_processes.append(lp)
+        else:
             try:
-                yml_content = yaml.safe_load(stream)
-                if 'file' not in yml_content:
-                    continue
-            except yaml.YAMLError as exc:
-                print(exc)
-            if 'model-id' in yml_content:
-                mname=yml_content['model-id']
-            models[mname] = {'path': yml_content['file'], 'id': mname, 'yml_path':yml_file}
+                # Send signal 0 to check if the process is still running
+                os.kill(pid, 0)
+                # If no exception is raised, the process is still running
+                running_processes.append(lp)
+            except OSError:
+                # If an OSError is raised, the process is not running
+                app.logger.debug(f"Process {lp['id']} with PID {pid} is no longer running. Removing from list.")
+                lp['status'] = 'terminated'
+                # Optionally, you can log or handle the terminated process here
 
-    return models
+    # Update the llama_processes list with only the running processes
+    llama_processes = running_processes
 
-@app.route('/api/v1/models', methods=['GET'])
-def get_available_models():
-    global models
-
-    models = scan_model_files()
-
-    active_models = [lp['id'] for lp in llama_processes if lp['status'] == 'active']
-    data = []
-    # Add active models to the data list
-    for m in models.values():
-        if m['id'] in active_models:
-            data.append({
-                "id": m['id'],
-                "object": "model",
-                "created": int(time.time()),
-                "owned_by": "organization-owner"
-            })
-    # Add inactive models to the data list
-    for m in models.values():
-        if m['id'] not in active_models:
-            data.append({
-                "id": m['id'],
-                "object": "model",
-                "created": int(time.time()),
-                "owned_by": "organization-owner"
-            })
-
-    return json.dumps({"object": "list", "data": data})
-
-@app.route('/api/llamacpp/new', methods=['POST'])
-def new_llama():
+def launch_new_llama(model_id):
     global process_counter
     global llama_processes
     global last_port_used
     global models
 
-    data = request.json
-    model_id = data.get('model') #this is model id/key from 'global models'
     model = models[model_id]
-    app.logger.debug(json.dumps(model))
-
     yml_content = llamacpp.get_model_config(model)
 
-    file_size_bytes = os.path.getsize(model['path'])
-    file_size_mb = file_size_bytes / (1024 * 1024)# Convert bytes to megabytes
+    file_size_mb = model['size_bytes'] / (1024 * 1024)
     ctx_percent = 10
     model_size_with_ctx = file_size_mb+file_size_mb*(ctx_percent/100)
 
@@ -189,10 +127,66 @@ def new_llama():
                                 start_new_session=True)
     pid = process.pid
     process_counter = process_counter + 1
+    current_timestamp = int(time.time())
 
-    lp = {'pid': pid, 'id':model_id ,'host': f"http://llamacpp:{port}", 'logfile': logfile,'command': ' '.join(command), 'file': model['path'], 'status':'active', 'file_size_mb':file_size_mb, 'mem_size': 0}
+    # Cleanup: Remove any items with the same model_id and status='pending'
+    llama_processes = [p for p in llama_processes if not (p['id'] == model_id and p['status'] == 'pending')]
+
+    lp = {'pid': pid, 'id':model_id ,'host': f"http://llamacpp:{port}", 'logfile': logfile,'command': ' '.join(command), 'file': model['path'], 'status':'active', 'file_size_mb':file_size_mb, 'mem_size': 0, 'timestamp': current_timestamp}
     app.logger.debug(json.dumps(lp))
     llama_processes.append(lp)
+
+@app.route('/api/v1/models', methods=['GET'])
+def get_available_models():
+    global models
+
+    models = model_files.scan()
+
+    active_models = [lp['id'] for lp in llama_processes if lp['status'] == 'active']
+    data = []
+    # Add active models to the data list
+    for m in models.values():
+        if m['id'] in active_models:
+            data.append({
+                "id": m['id'],
+                "object": "model",
+                "created": int(time.time()),
+                "owned_by": "organization-owner"
+            })
+    # Add inactive models to the data list
+    for m in models.values():
+        if m['id'] not in active_models:
+            data.append({
+                "id": m['id'],
+                "object": "model",
+                "created": int(time.time()),
+                "owned_by": "organization-owner"
+            })
+
+    return json.dumps({"object": "list", "data": data})
+
+@app.route('/api/llamacpp/new', methods=['POST'])
+def new_llama():
+    global process_counter
+    global llama_processes
+    global last_port_used
+    global models
+
+    data = request.json
+    model_id = data.get('model') #this is model id/key from 'global models'
+    model = models[model_id]
+    app.logger.debug(json.dumps(model))
+    cleanup_processes()
+
+    process = next((p for p in llama_processes if p['id'] == model_id), None)
+    if process:
+        print(f"{model_id} already running at {process['host']}")
+    else:
+        print(f"Launching new process for {model_id}")
+        current_timestamp = int(time.time())  # Get the current Unix timestamp
+        llama_processes.append({'pid': 0, 'id':model_id ,'host': f"none", 'logfile': '','command': ' ', 'file': '', 'status':'pending', 'file_size_mb':0, 'mem_size': 0, 'timestamp': current_timestamp})
+        launch_new_llama(model_id)
+
     r = {'processes': llama_processes, 'status':'success'}
     return jsonify(r)
 

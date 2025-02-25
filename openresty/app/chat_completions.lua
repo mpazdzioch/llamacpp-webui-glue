@@ -4,20 +4,8 @@ local api = require("api")
 
 local function load_model(pdata)
 
-    local llmd = ngx.shared.llm
-    local ami = cjson.decode(llmd:get('api_model_info'))
-    for _, item in ipairs(ami) do
-        if item.id == pdata.model and item.status == "active" then
-            ngx.log(ngx.INFO, "found model already loaded: ", pdata.model)
-            return item.host
-        end
-    end
-    ngx.log(ngx.INFO, "model needs loading: ", pdata.model)
-    
-    --run new model
     local d = {model=pdata["model"]}
     local result, err = api.call('/llamacpp/new',d)
-    ngx.sleep(2)
 
     if err then
         ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
@@ -30,33 +18,25 @@ local function load_model(pdata)
         ngx.say("Error: ", result.message)
         return 
     end
+    return result
+end
 
-    llmd:set('api_model_info',cjson.encode(result.processes))
-    for _, item in ipairs(result.processes) do
-        ngx.log(ngx.INFO, 'result debug: ', item.id, ':',item.status)
-        if item.id == pdata.model and item.status == "active" then
-            local retry = 0
-            while retry < 150 do
-                local response, err = api.call_llamaserver(item.host,'/health',nil)
-                if err then
-                    ngx.log(ngx.WARN, "error checking model health: ", err)
-                    ngx.sleep(1)
-                    retry = retry + 1
-                elseif response.status == "ok" then
-                    ngx.log(ngx.INFO, "found model already loaded: ", pdata.model)
-                    return item.host
-                else
-                    ngx.sleep(1)
-                    retry = retry + 1
-                end
+local function get_model(pdata)
+
+    local max_attempts = 60
+    for attempt = 1, max_attempts do
+        local timestamp = os.time()
+        local result = load_model(pdata)
+        for _, item in ipairs(result.processes) do
+            local model_age = timestamp-item.timestamp
+            --ngx.log(ngx.INFO, 'result debug: ', item.id, ':',item.status)
+            if item.id == pdata.model and item.status == "active" and model_age>3 then
+                --ngx.log(ngx.INFO, "model age in seconds: "..model_age)
+                return item.host
             end
-            ngx.log(ngx.ERR, "failed to get healthy model after 60 retries: ", pdata.model)
-            ngx.status = ngx.HTTP_INTERNAL_SERVER_ERROR
-            ngx.say("Error: failed to load model")
-            return
         end
+        ngx.sleep(1)
     end
-
 end
 
 ngx.req.read_body()
@@ -86,7 +66,7 @@ if data["model"] == vars.ROUTER_MODEL_NAME then
     ngx.log(ngx.INFO, "doing router cli")
     return ngx.exec("@router_cli")
 else
-    local host = load_model(data)
+    local host = get_model(data)
     ngx.var.llamaurl = host .. "/v1/chat/completions"
     ngx.log(ngx.INFO, "going to ",ngx.var.llamaurl)
 end
