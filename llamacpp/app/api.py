@@ -73,17 +73,21 @@ def launch_new_llama(model_id):
                 p['mem_size'] = gpu_data['process_memory_usage_mb'][pid]
         app.logger.debug(json.dumps(llama_processes))
         
-        if gpu_data['total_memory_mb']<=model_size_with_ctx:
-            message = f"cant fit {model_size_with_ctx}MB model in {gpu_data['total_memory_mb']}MB VRAM"
+        min_vram_mb = model_size_with_ctx
+        if 'min-vram-gb' in yml_content:
+            min_vram_mb = yml_content['min-vram-gb']*1000
+
+        if gpu_data['total_memory_mb']<=min_vram_mb:
+            message = f"cant fit {model_size_with_ctx}MB model in {gpu_data['total_memory_mb']}MB VRAM. Need at least {min_vram_mb}MB in VRAM"
             app.logger.error(message)
             r = {'processes': llama_processes, 'status':'error', 'message': message}
             return jsonify(r)
         
-        if gpu_data['total_free_memory_mb']<=model_size_with_ctx:
+        if gpu_data['total_free_memory_mb']<=min_vram_mb:
             #kill some processes to make room for new model
             #remove largest first
-            app.logger.debug(f"model size is {model_size_with_ctx} but only {gpu_data['total_free_memory_mb']} available. trying to free some memory now.")
-            vram_to_free = model_size_with_ctx-gpu_data['total_free_memory_mb']
+            app.logger.debug(f"we need {min_vram_mb}MB VRAM but only {gpu_data['total_free_memory_mb']} available. trying to free some memory now.")
+            vram_to_free = min_vram_mb-gpu_data['total_free_memory_mb']
             active_procs = [d for d in llama_processes if d['status'] == 'active']
             active_procs = sorted(active_procs, key=lambda k: k['file_size_mb'], reverse=True)
             total_mem_size = 0
@@ -107,8 +111,8 @@ def launch_new_llama(model_id):
         #recheck after killing
         time.sleep(3)
         gpu_data = gpu.usage_info()
-        if gpu_data['total_free_memory_mb']<=model_size_with_ctx:
-            message = f"tried to kill some llama processes to free up vram but still not enough. avail mem {gpu_data['total_free_memory_mb']} but need {model_size_with_ctx}"
+        if gpu_data['total_free_memory_mb']<=min_vram_mb:
+            message = f"tried to kill some llama processes to free up vram but still not enough. avail mem {gpu_data['total_free_memory_mb']} but need {min_vram_mb}"
             app.logger.error(message)
             r = {'processes': llama_processes, 'status':'error', 'message': message}
             return jsonify(r)
