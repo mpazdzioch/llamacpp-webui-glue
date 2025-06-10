@@ -8,7 +8,12 @@ Services:
 - `webui` is a stock docker image from [open-webui](https://github.com/open-webui/open-webui)
 - `openresty` is a stock docker image for openresty to proxy openAI api requests from webui to api. Some functionality is implemented as LUA scripts
 - `llamacpp` for launching multiple llama-server instances through python Flask API. Dockerfile for this service is based on official llamacpp dockerfile + python for the API.
-- `mcpo` is a stock docker image from [mcpo](https://github.com/open-webui/mcpo) to expose MCP servers to webui. Example config file with date/time tool is provided in `./mcpo`. Each tool has to be manually added in webui settings and enabled for each model separately.
+- `mcpo` is a stock docker image from [mcpo](https://github.com/open-webui/mcpo) to expose MCP servers to webui. Example config file with date/time tool is provided in `./mcpo`. Each tool has to be manually added in webui settings and enabled for each model separately. For example add the default time tool like that (*Admin->Settings->Tools*):
+  - url: *http://mcpo:8000/time*
+  - auth: *key*
+  - name: *time*
+
+  then enable this tool in each model(s) settings.
 
 ## Quick start
 
