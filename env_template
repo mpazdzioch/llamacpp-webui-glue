@@ -11,3 +11,5 @@ WEBUI_PORT=7777
 #you can add more API external endpoints/keys for openwebUI to use models from. For example vllm for vision models etc. IT's optional
 OPENAI_API_BASE_URLS=
 OPENAI_API_KEYS=
+MCPO_CONFIG_FILE=example-config.json
+MCPO_API_KEY=key

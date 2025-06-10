@@ -63,3 +63,10 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  mcpo:
+    image: ghcr.io/open-webui/mcpo:main
+    command: mcpo --port 8000 --api-key "${MCPO_API_KEY}" --config /mcpo/"${MCPO_CONFIG_FILE}""
+    restart: always
+    volumes:
+      - ./mcpo:/mcpo
