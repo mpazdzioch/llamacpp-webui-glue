@@ -52,6 +52,7 @@ services:
       - "127.0.0.1:5000:5000" #for debugging
     volumes:
       - '${MODEL_DIR}:${MODEL_DIR}'
+      - /disk2/models:/disk2/models
       - './llamacpp/app:/api'
       - ./data/llamacpp-logs:/llamacpp-logs
       - './model-config:/model-config'
@@ -66,7 +67,10 @@ services:
 
   mcpo:
     image: ghcr.io/open-webui/mcpo:main
-    command: mcpo --port 8000 --api-key "${MCPO_API_KEY}" --config /mcpo/"${MCPO_CONFIG_FILE}""
+    command: >
+      mcpo --port 8000 
+      --api-key "${MCPO_API_KEY}" 
+      --config "/mcpo/${MCPO_CONFIG_FILE}"
     restart: always
     volumes:
       - ./mcpo:/mcpo

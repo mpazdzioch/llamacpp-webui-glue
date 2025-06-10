@@ -8,6 +8,7 @@ Services:
 - `webui` is a stock docker image from [open-webui](https://github.com/open-webui/open-webui)
 - `openresty` is a stock docker image for openresty to proxy openAI api requests from webui to api. Some functionality is implemented as LUA scripts
 - `llamacpp` for launching multiple llama-server instances through python Flask API. Dockerfile for this service is based on official llamacpp dockerfile + python for the API.
+- `mcpo` is a stock docker image from [mcpo](https://github.com/open-webui/mcpo) to expose MCP servers to webui. Example config file with date/time tool is provided in `./mcpo`. Each tool has to be manually added in webui settings and enabled for each model separately.
 
 ## Quick start
 
@@ -48,6 +49,8 @@ The webui interface will be available on [localhost:7777](http://localhost:7777)
 
 ## Model configuration details
 
+- [All possible YML config file options described here](./model-config/config-format-reference.yml)
+
 - You only need folder with .gguf file(s) to use this project. Settings from `./model-config/defaul-config.yml` will be aplied to all models. This file contains default llama-server cli options.
 
 - However, when you want to define custom llama-server options for some models, for example custom GPU split or context size or anything else that llama-server allows using cli options - create a .yml file in `./model-config`. When your model file is named `codestral:22b-v0.1-q8_0.gguf`, create `./model-config/codestral:22b-v0.1-q8_0.gguf.yml` and options from this file will be automatically used when launching this model.
@@ -82,6 +85,8 @@ The webui interface will be available on [localhost:7777](http://localhost:7777)
 - `openresty`: nginx configuration and couple of LUA scripts to proxy openAI api requests to flask API
 
 - `model-config`: we keep all .yml files with custom model configs here
+
+- `mcpo`: stores MCPO server config file
 
 ## Scripts
 

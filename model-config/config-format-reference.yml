@@ -1,0 +1,15 @@
+#path to model file
+file: /home/models/qwen3-235b-Q8/Qwen3-235B-A22B-Q8_0-00001-of-00006.gguf
+#model-id to return from API calls instead of gguf file name [OPTIONAL]
+model-id: Qwen3-235B-Q8-nt
+#by default in GPU version, if full model won't fit in VRAM the loader throws an exception. If you only want to offload part of the model to GPU, use 'min-vram-gb' option to specify the minimum needed vram in GB [OPTIONAL] 
+min-vram-gb: 15
+#all the CLI arguments that llama-server supports can be set here under 'llama-server' list
+llama-server:    
+  --ctx-size: 4096
+  --gpu-layers: 96
+  #In case of ON/OFF options like '--flash-attn' use 'no_value_flag'
+  --flash-attn: no_value_flag
+  --override-tensor: ".ffn_.*_exps.=CPU"
+  --device: CUDA2
+  --no-kv-offload: no_value_flag

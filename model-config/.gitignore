@@ -4,3 +4,4 @@
 !.gitignore
 !default-config*
 !*.example
+!config-format-reference.yml
