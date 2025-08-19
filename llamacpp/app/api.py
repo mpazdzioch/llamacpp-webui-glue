@@ -15,13 +15,17 @@ import time
 last_port_used = 8080
 process_counter = 0
 llama_processes = []
+os_processes = []
 models = {}
 app = Flask(__name__)
 
 def cleanup_processes():
     global llama_processes
+    global os_processes
     running_processes = []
     current_time = int(time.time())  # Get the current Unix timestamp
+
+    os_processes = [p for p in os_processes if p.poll() is None]  # joins any crashed processes and avoids zombies
 
     for lp in llama_processes:
         pid = lp['pid']
@@ -53,6 +57,7 @@ def cleanup_processes():
 def launch_new_llama(model_id):
     global process_counter
     global llama_processes
+    global os_processes
     global last_port_used
     global models
 
@@ -129,6 +134,7 @@ def launch_new_llama(model_id):
                                 stdin=subprocess.PIPE, 
                                 close_fds=True, 
                                 start_new_session=True)
+    os_processes.append(process)
     pid = process.pid
     process_counter = process_counter + 1
     current_timestamp = int(time.time())
