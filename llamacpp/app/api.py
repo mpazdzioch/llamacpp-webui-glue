@@ -19,6 +19,20 @@ os_processes = []
 models = {}
 app = Flask(__name__)
 
+def cleanup_log_files():
+    """Delete all .txt log files in the /llamacpp-logs/ directory."""
+    log_dir = '/llamacpp-logs'
+    try:
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        for filename in os.listdir(log_dir):
+            if filename.endswith('.txt'):
+                file_path = os.path.join(log_dir, filename)
+                os.remove(file_path)
+                app.logger.debug(f"Deleted log file: {file_path}")
+    except Exception as e:
+        app.logger.error(f"Error cleaning up log files: {e}")
+
 def cleanup_processes():
     global llama_processes
     global os_processes
@@ -125,7 +139,7 @@ def launch_new_llama(model_id):
     last_port_used += 1
     port = last_port_used
     command = llamacpp.generate_cli_command(yml_content,port)
-    logfile = f'/llamacpp-logs/log_{process_counter}.txt'
+    logfile = f'/llamacpp-logs/log_{process_counter}_{model_id}.txt'
     with open(logfile, 'w') as log_file:
         process = subprocess.Popen(command, 
                                 cwd="/",
@@ -201,4 +215,5 @@ def new_llama():
     return jsonify(r)
 
 if __name__ == '__main__':
+    cleanup_log_files()
     app.run(debug=True, port=5000, host='0.0.0.0')
